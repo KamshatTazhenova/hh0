@@ -1312,6 +1312,7 @@ for tt in range(times):
 			bins_obs = np.linspace(min_z_obs, max_z_obs, n_bins)
 			hist, bin_edges = np.histogram(obs_z_from_file, bins_obs)
 			
+			#for straight line distribution just pass a_coeff, b_coeff, z_min, z_max, after fitting a stright line in unzipping.py
 			
 			# set up stan inputs and sample
 			stan_data = {'ntlo': int(ntlo), 'vary_m_c': int(vary_m_c), \
