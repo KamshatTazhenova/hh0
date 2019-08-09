@@ -20,6 +20,8 @@ import fnmatch
 import getdist as gd
 import getdist.plots as gdp
 import h5py
+import bz2file
+import pandas as pd
 
 def ln_post_h_0_alt(h_0, z_obs, d_obs):
 	n_event = len(z_obs)
@@ -314,7 +316,16 @@ def merger_sim(h_0_true, sig_v_pec, amp_s, amp_n, sig_v_pec_obs, \
 			z_cos = rej_sample_z_prior(1, z_max, p_max, None, \
 									   inc_rate_redshift)
 		else:
-			z_cos = z_max * np.cbrt(npr.rand(1))
+			catalog_filename='5563.csv.bz2' #MICE catalog 
+			with bz2file.BZ2File(catalog_filename) as galaxy_fd:
+				galaxy_sample = pd.read_csv(galaxy_fd, sep=',', comment='#', na_values = '\N')
+			arr = galaxy_sample.to_numpy()
+			arr = arr[(arr[:,4] <= 0.3),:] #cosmological redhsift values
+			mag = arr[(arr[:,1] <= 23.9), :] #oberved magnitude cut
+			abs_mag = mag[(mag[:,0] <= -15.5), :] #absolute magnitude cut
+			n_z = npr.randint(0, len(abs_mag)-1)
+			z_cos = np.array([abs_mag[n_z, 4]])
+		
 		z_true = z_cos + v_pec_true / c
 		d_true = c * z_cos / h_0_true
 	if vary_m_c:
@@ -399,124 +410,21 @@ c = 2.998e5
 single_z = False
 analytic = False
 
-# toy model for pop @ single redshift or not?
-if single_z:
 
-	# settings
-	n_event = 2
-	sig_d = 20.0
-	sig_v = 200.0
-	d_true = 100.0
-	z_true = h_0_true * d_true / c
-	h_0_grid = np.linspace(1.0, 200.0, 1000)
-	delta_h_0 = h_0_grid[1] - h_0_grid[0]
-	#h_0_grid = np.linspace(68.0, 72.0, 1000)
-
-	n_event = 51
-	n_sample = 30
-	for j in range(n_sample):
-		d_obs = npr.randn(n_event) * sig_d + d_true
-		v_obs = npr.randn(n_event) * sig_v
-		z_obs = (h_0_true * d_true) / c
-		ln_prob = lprob_sample(h_0_grid, d_obs, z_obs, v_obs, \
-							   sig_v ** 2, sig_d ** 2)
-		prob = np.exp(ln_prob - np.max(ln_prob))
-		prob = normalize_dist(prob, delta_h_0)
-		mp.plot(h_0_grid, prob)
-		ln_prob = lprob_sample_alt(h_0_grid, d_obs, z_obs, v_obs, \
-							   sig_v, sig_d)
-		prob = np.exp(ln_prob - np.max(ln_prob))
-		prob = normalize_dist(prob, delta_h_0)
-		mp.plot(h_0_grid, prob, 'k--')
-	mp.axvline(h_0_true)
-	mp.show()
-
-	# loop over n_events
-	n_events = np.array([1, 3, 10, 30, 100, 300, 1000])
-	n_event_cols = np.linspace(0.0, 0.9, len(n_events))
-	fig, axes = mp.subplots(1, 2, figsize=(12, 6), sharey=True)
-	d_obs = npr.randn(np.max(n_events)) * sig_d + d_true
-	v_obs = npr.randn(np.max(n_events)) * sig_v
-	z_obs = (h_0_true * d_true) / c
-	for n in range(len(n_events)):
-		ln_prob = lprob_sample(h_0_grid, d_obs[0:n_events[n]], \
-							   z_obs, v_obs[0:n_events[n]], \
-							   sig_v ** 2, sig_d ** 2)
-		prob = np.exp(ln_prob - np.max(ln_prob))
-		prob = normalize_dist(prob, delta_h_0)
-		axes[0].plot(h_0_grid, prob, color=cm(n_event_cols[n]), \
-					 label='{:d} events'.format(n_events[n]))
-		ln_prob = lprob_sample_no_n(h_0_grid, d_obs[0:n_events[n]], \
-									z_obs, v_obs[0:n_events[n]], \
-									sig_v ** 2, sig_d ** 2)
-		prob = np.exp(ln_prob - np.max(ln_prob))
-		prob = normalize_dist(prob, delta_h_0)
-		axes[1].plot(h_0_grid, prob, color=cm(n_event_cols[n]), \
-					 label='{:d} events'.format(n_events[n]))
-	axes[0].axvline(h_0_true, color='k', ls='--', label=r'True $H_0$')
-	axes[1].axvline(h_0_true, color='k', ls='--', label=r'True $H_0$')
-	axes[0].legend(loc='upper right')
-	axes[1].legend(loc='upper right')
-	axes[0].set_xlabel(r'$H_0$')
-	axes[1].set_xlabel(r'$H_0$')
-	axes[0].set_ylabel(r'${\rm Pr}(H_0|d)$')
-	axes[0].set_title(r'$H_0^{-n}$ Included')
-	axes[1].set_title(r'$H_0^{-n}$ Discarded')
-	axes[0].set_xlim(50.0, 90.0)
-	axes[1].set_xlim(50.0, 90.0)
-	xticks = axes[1].xaxis.get_major_ticks()
-	xticks[0].label1.set_visible(False)
-	fig.subplots_adjust(hspace=0, wspace=0)
-	mp.savefig('idealized_posteriors_bias_vs_n_events.pdf', \
-			   bbox_inches = 'tight')
-	mp.show()
-	exit()
-
-elif analytic:
-
-	# Daniel's analytic model
-	n_event = 100
-	n_grid = 500
-	d_max = np.linspace(0.0, 300.0, n_grid)
-	d_err_frac = 0.1
-	sig_z = 0.0005
-	sig_v = 200.0
-	cols = [cm(0.2), cm(0.7)]
-	delta_h_0_sel = 0.0
-
-	d_0 = np.sqrt(c ** 2 * sig_z ** 2 + sig_v ** 2) / \
-		  (h_0_true * d_err_frac)
-	sig_h_0 = np.sqrt(3.0 / 5.0 / float(n_event)) * h_0_true * \
-			  d_err_frac * np.sqrt(5.0 * (d_0 / d_max) ** 2 + 1.0)
-	delta_h_0 = -1.0 * d_max / 100.0
-	print d_0
-	mp.plot(d_max, delta_h_0_sel + sig_h_0, color=cols[0])
-	mp.plot(d_max, delta_h_0_sel - sig_h_0, color=cols[0])
-	mp.plot(d_max, delta_h_0_sel * np.ones(n_grid), color=cols[0], ls='--')
-	mp.plot(d_max, delta_h_0_sel + delta_h_0 + sig_h_0, color=cols[1])
-	mp.plot(d_max, delta_h_0_sel + delta_h_0 - sig_h_0, color=cols[1])
-	mp.plot(d_max, delta_h_0_sel + delta_h_0, color=cols[1], ls='--')
-	mp.ylim(-3.0, 3.0)
-	mp.gca().tick_params(axis='both', which='major', labelsize=14)
-	mp.xlabel(r'${\rm maximum\,survey\,distance,}\,D_*\,' + \
-			  r'{\rm(Mpc)}$', fontsize=16)
-	mp.ylabel(r'${\rm error/bias\,in}\,H_0,\,{\rm(km/s/Mpc)}$', \
-			  fontsize=16)
-	mp.show()
-	exit()
+times = 1
 
 
-else:
-
+for tt in range(times):
+	print tt
 	# settings for toy problem
-	n_event = 100 # 100
+	n_event = 1000 # 100
 	n_rpt = 1#100
 	d_min = 0.0
 	d_max = 1000.0 # 500.0
-	z_max = 0.18 # 0.235
+	z_max = 0.3 # 0.235
 	amp_s = 3000.0
 	amp_n =  1.0
-	snr_lim = 12.0
+	snr_lim = 5.0
 	c = 2.998e5  # km / s
 	g = 4.301e-9 # km^2 Mpc / M_sol / s^2
 	h_0_true = 70.0
@@ -544,23 +452,23 @@ else:
 		stub += 'zero_noise_like_'
 	plot_events = False
 	use_mpi = True
-	constrain = True
+	constrain = False
 	sample = True
 	sample_d = False
-	n_samples = 1000
+	n_samples = 10000
 	n_chains = 4
 	recompile = False
 	stan_constrain = False
 	sig_v_pec = 500.0 # LVC take U(-1000,1000)
 	sig_v_pec_obs = 200.0 # 185.0 # 150.0
-	sig_z_obs = 0.001 # 75.0 / c
+	sig_z_obs = 0.0 # 75.0 / c
 	plot_cos_i = False
 	fixed_n_bns = False
-	ntlo = True
-	vary_m_c = True
-	inc_rate_redshift = True
+	ntlo = False
+	vary_m_c = False
+	inc_rate_redshift = False
 	save_distances = False
-	plot_dist_cos_i_posts = True
+	plot_dist_cos_i_posts = False
 	sample_dist_cos_i_posts = False
 	find_n_bar = False
 	m_i_mean = 1.4
@@ -569,6 +477,7 @@ else:
 	pars = ['h_0']
 	par_names = ['H_0']
 	par_ranges = {}
+	all_par = False
 	if ntlo:
 		base += '_hq'
 		pars += ['q_0']
@@ -577,6 +486,15 @@ else:
 				(1.0 + 0.5 * (1.0 - q_0_true) * z_max)
 	else:
 		d_max = c * z_max / h_0_true
+	if all_par:
+		pars += ['z_cos']
+		par_names += ['z_cos']
+		pars += ['cos_i']
+		par_names += ['cos_i']
+		pars += ['v_pec']
+		par_names += ['v_pec']
+		pars += ['true_z']
+		par_names += ['true_z']
 	n_pars = len(pars)
 	if vary_m_c:
 		base += '_vary_m_c'
@@ -649,7 +567,7 @@ else:
 
 		# set out grid of parameters
 		n_grid = 10
-		h_0_min, h_0_max = 60.0, 80.0
+		h_0_min, h_0_max = 20.0, 140.0
 		q_0_min, q_0_max = -2.0, 1.0
 		h_0_grid = np.linspace(h_0_min, h_0_max, n_grid)
 		q_0_grid = np.linspace(q_0_min, q_0_max, n_grid)
@@ -854,7 +772,12 @@ else:
 	else:
 		renorm = poly_surf(np.array([h_0_true]), *popt)
 	popt *= float(n_event) / renorm
-
+	
+	
+	z_cos_true1 = 0.0 
+	cos_i_true1 = 0.0
+	v_pec_true1 = 0.0
+	ind = 0
 	# sample or read in samples
 	if sample:
 
@@ -886,6 +809,7 @@ else:
 			amp_cross_obs = []
 			snr_true = []
 			snr_obs = []
+			
 			if not ntlo and not inc_rate_redshift:
 				p_max = None
 			else:
@@ -945,7 +869,9 @@ else:
 							 (1.0 + v_pec_true / c)
 			else:
 				z_cos_true = z_true - v_pec_true / c
-
+			
+			
+			
 			# sanity checks
 			print('simulation sanity checks!')
 			std_check_txt = '{:s}: est = {:9.3e}; exp = {:9.3e}'
@@ -966,13 +892,17 @@ else:
 			
 			# cut sample
 			det = snr_obs > snr_lim
+			ind = np.where(det)[0]
+			
 			if n_rpt == 1:
 				print '{:d}/{:d} objects detected'.format(np.sum(det), n_event)
+				
+				'''
 				fig, axes = mp.subplots(1, 2, figsize=(12, 5))
 				bins = np.linspace(0.0, z_max, 50)
-				axes[0].hist(z_cos_true, bins=bins, normed=True, fc=cols[2], \
+				axes[0].hist(z_cos_true, bins=bins, density=True, fc=cols[2], \
 							 ec=cols[2], alpha=0.9, label='all (samples)')
-				axes[0].hist(z_cos_true[det], bins=bins, normed=True, fc=cols[8], \
+				axes[0].hist(z_cos_true[det], bins=bins, density=True, fc=cols[8], \
 							 ec=cols[8], alpha=0.7, label='detected')
 				axes[0].plot(bins, z_prior(bins, z_max, q_0_true, \
 										   inc_rate_redshift), 'k--', \
@@ -982,9 +912,9 @@ else:
 				axes[0].set_xlim(0.0, z_max)
 				axes[0].legend(loc='upper right')
 				bins = np.linspace(-1, 1, 50)
-				axes[1].hist(cos_i_true, bins=bins, normed=True, fc=cols[2], \
+				axes[1].hist(cos_i_true, bins=bins, density=True, fc=cols[2], \
 							 ec=cols[2], alpha=0.9)
-				axes[1].hist(cos_i_true[det], bins=bins, normed=True, fc=cols[8], \
+				axes[1].hist(cos_i_true[det], bins=bins, density=True, fc=cols[8], \
 							 ec=cols[8], alpha=0.7)
 				axes[1].plot(bins, np.ones(len(bins)) * 0.5, 'k--')
 				axes[1].set_xlabel(r'$\cos\,\i$')
@@ -1074,7 +1004,7 @@ else:
 				mp.savefig(base + '_par_vs_snr_dist_' + n_event_str + '.pdf', \
 						   bbox_inches='tight')
 				mp.close(fig)
-
+				'''
 				# optionally generate distance-cos i posteriors considering 
 				# only GW data using Stan
 				if plot_dist_cos_i_posts:
@@ -1356,18 +1286,45 @@ else:
 					print 'ERROR: pickled Stan model (' + model_base + \
 						  '_model.pkl) not found. Please set recompile = True'
 					exit()
+			
+			
+			#passing the histogram of observed redshift values as the redshift distribution (prior)
+			catalog_filename='5563.csv.bz2'
+			with bz2file.BZ2File(catalog_filename) as galaxy_fd:
+				galaxy_sample = pd.read_csv(galaxy_fd, sep=',', comment='#', na_values = '\N')
 
+			n_bins = 100
+			arr = galaxy_sample.to_numpy()
+			arr = arr[(arr[:,4] <= 0.3),:]
+			mag = arr[(arr[:,1] <= 23.9), :]
+			abs_mag = mag[(mag[:,0] <= -15.5), :]
+			
+			filename_z_obs = 'bias_test_z_obs1.h5' #file with observed redshift values
+			f_z = h5py.File(filename_z_obs, 'r')
+			raw_samples_z = f_z['z_ph_obs']
+			obs_z_from_file = np.zeros(len(abs_mag))
+			for q in range(0, len(abs_mag)):
+				obs_z_from_file[q] = raw_samples_z[q]
+
+			max_z_obs = np.max(obs_z_from_file)
+			min_z_obs = np.min(obs_z_from_file)
+			
+			bins_obs = np.linspace(min_z_obs, max_z_obs, n_bins)
+			hist, bin_edges = np.histogram(obs_z_from_file, bins_obs)
+			
+			
 			# set up stan inputs and sample
 			stan_data = {'ntlo': int(ntlo), 'vary_m_c': int(vary_m_c), \
 						 'z_dep_rate': int(inc_rate_redshift), \
 						 'fixed_n_bns': int(fixed_n_bns), \
 						 'n_bns': n_det, 'obs_amp_plus': amp_plus_obs[det], \
 						 'obs_amp_cross': amp_cross_obs[det], \
-						 'obs_v_pec': v_pec_obs[det], 'obs_z': z_obs[det], \
+						 'n_bins':n_bins, 'z_bins': bin_edges, 'histogram': hist, \
+						 'a_coeff': 32.043, 'b_coeff': -1.596,\
 						 'amp_n': amp_n, 'sig_v_pec': sig_v_pec, \
-						 'sig_obs_v_pec': sig_v_pec_obs, \
-						 'sig_z': sig_z_obs, 'z_max': z_max, \
+						 'sig_z': sig_z_obs, 'z_max': max_z_obs,  'z_min': min_z_obs,\
 						 'n_coeffs': len(popt), 'n_bar_det_coeffs': popt}
+			#print 'coeff = ', popt
 			if vary_m_c:
 				stan_data['mu_m_c'] = m_c_prior_mean
 				stan_data['sig_m_c'] = m_c_prior_std
@@ -1387,6 +1344,7 @@ else:
 				else:
 					stan_data['d_max'] = c * z_max / h_0_true
 			stan_pars = pars
+			#stan_pars = ['true_z']
 			if stan_constrain:
 				stan_seed = 23102014
 			else:
@@ -1415,6 +1373,7 @@ else:
 				print 'M_c prior std: {:19.12e}'.format(m_c_prior_std)
 				print 'avg M_c std: {:19.12e}'.format(avg_std)
 				exit()
+			
 			fit = stan_model.sampling(data = stan_data, \
 									  iter = n_samples, \
 									  chains = n_chains, \
@@ -1423,15 +1382,18 @@ else:
 			samples[..., i] = fit.extract(permuted = False, \
 										  inc_warmup = False)
 			print fit
+			
+			
 			if save_distances:
 				d_trues[:, i] = d_true[det]
 
 		# accumulate results and save to disk
 		samples = complete_array(samples, use_mpi)
 		if rank == 0:
-			with h5py.File(base + '_samples_' + '{:d}'.format(n_rpt) + \
+			with h5py.File('runs/' + str(tt+1) + "/" + base + '_samples_' + '{:d}'.format(n_rpt) + \
 						   '_rpts.h5', 'w') as f:
 				f.create_dataset('samples', data=samples)
+			
 		if save_distances:
 			d_trues = complete_array(d_trues, use_mpi)
 			if rank == 0:
@@ -1441,9 +1403,11 @@ else:
 
 	# read in samples on master process and broadcast to others
 	if rank == 0:
-
+		
+		
+		
 		# retrieve samples and convert to required GetDist format
-		with h5py.File(base + '_samples_' + '{:d}'.format(n_rpt) + \
+		with h5py.File('runs/' + str(tt+1) + "/" + base + '_samples_' + '{:d}'.format(n_rpt) + \
 					   '_rpts.h5', 'r') as f:
 			raw_samples = f['samples'][:]
 		n_chains = raw_samples.shape[1]
@@ -1488,12 +1452,15 @@ else:
 						ax.axvline(par_vals[i], color='gray', ls='--')
 			mp.savefig(base + '_triangle_plot.pdf', bbox_inches = 'tight')
 		else:
+			
 			gd_samples = gd.MCSamples(samples=samples[..., 0], names=pars, 
 									  labels=par_names, ranges=par_ranges)
 			if ntlo:
 				par_vals = [h_0_true, q_0_true]
 			else:
 				par_vals = [h_0_true]
+			if all_par:
+				par_vals = [h_0_true, 0.0, 0.0, 0.0, 0.0]
 			g = gdp.getSubplotPlotter()
 			g.settings.lw_contour = lw
 			g.settings.axes_fontsize = 8
@@ -1510,7 +1477,7 @@ else:
 						ax.axhline(par_vals[i], color='gray', ls='--')
 					for ax in g.subplots[i:, i]:
 						ax.axvline(par_vals[i], color='gray', ls='--')
-			mp.savefig(base + '_triangle_plot.pdf', bbox_inches = 'tight')
+			mp.savefig('runs/' + str(tt+1) + "/" + base + '_triangle_plot.pdf', bbox_inches = 'tight')
 
 	else:
 
@@ -1536,8 +1503,9 @@ else:
 									np.sqrt(h_0_post_var))
 	h_0_post_summaries = complete_array(h_0_post_summaries, use_mpi)
 	if rank == 0:
-		with h5py.File(base + '_h_0_summaries_' + '{:d}'.format(n_rpt) + \
+		with h5py.File('runs/' + str(tt+1) + "/" + base + '_h_0_summaries_' + '{:d}'.format(n_rpt) + \
 					   '_rpts.h5', 'w') as f:
 			f.create_dataset('h_0_post_summaries', \
 							 data=h_0_post_summaries)
+
 
